@@ -83,7 +83,7 @@ struct ClaimInfo {
 /// Test endpoint.
 #[get("/")]
 async fn hello() -> impl Responder {
-    HttpResponse::Ok().body("Hello zap!")
+    HttpResponse::Ok().body("Hello xcaddex!")
 }
 
 /// Gets swaps.
@@ -522,7 +522,7 @@ fn var_enabled(var_str: &str) -> bool {
 async fn main() -> std::io::Result<()> {
   let env_path = std::env::var("ENV_FILE").unwrap_or(String::from("./.env"));
   dotenv::from_path(env_path).ok();
-  env_logger::init_from_env(env_logger::Env::default().default_filter_or("zap_api=debug,actix_web=info")); // override with RUST_LOG env
+  env_logger::init_from_env(env_logger::Env::default().default_filter_or("xcaddex_api=debug,actix_web=info")); // override with RUST_LOG env
 
   // set up database connection pool
   let connspec = std::env::var("DATABASE_URL").expect("DATABASE_URL env var missing.");
@@ -538,7 +538,7 @@ async fn main() -> std::io::Result<()> {
   let redis = redis::Client::open(rconnspec).expect("Could not connect to redis");
   let mut con = redis.get_connection().expect("Failed to get redis connection");
   // throw away the result, just make sure it does not fail
-  let _ : () = con.set("zap-api-redis:test", 42).expect("Failed to set value on redis");
+  let _ : () = con.set("xcaddex-api-redis:test", 42).expect("Failed to set value on redis");
 
   // get network
   let network_str = std::env::var("NETWORK").unwrap_or(String::from("testnet"));

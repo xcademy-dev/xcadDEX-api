@@ -326,7 +326,7 @@ pub fn get_time_weighted_liquidity(
   };
 
   let network = std::env::var("NETWORK").unwrap_or(String::from("testnet"));
-  let cache_key = format!("zap-api-cache:{}:get_time_weighted_liquidity:{}:{}:{}", network, start_timestamp.unwrap_or(0).to_string(), end_timestamp.unwrap_or(0).to_string(), address.unwrap_or(""));
+  let cache_key = format!("xcaddex-api-cache:{}:get_time_weighted_liquidity:{}:{}:{}", network, start_timestamp.unwrap_or(0).to_string(), end_timestamp.unwrap_or(0).to_string(), address.unwrap_or(""));
   let cache_value: Option<String> = cache.get(cache_key.clone()).unwrap_or(None);
   match cache_value {
     Some (serialized) => {
