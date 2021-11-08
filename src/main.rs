@@ -560,7 +560,7 @@ async fn main() -> std::io::Result<()> {
   }
 
   // worker config
-  let contract_hash = serde_yaml::from_value::<String>(data[network.to_string()]["zilswap_address_hex"].clone()).expect("invalid zilswap_address_hex");
+  let contract_hash = serde_yaml::from_value::<String>(data[network.to_string()]["xcaddex_address_hex"].clone()).expect("invalid xcaddex_address_hex");
   let distributor_contract_hashes = distr_configs.iter().map(|d| d.distributor_address()).collect();
   let worker_config = WorkerConfig::new(network, contract_hash.as_str(), distributor_contract_hashes);
 

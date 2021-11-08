@@ -17,6 +17,14 @@ use crate::models;
 use crate::responses;
 use crate::constants::{Event, Network};
 
+fn var_enabled(var_str: &str) -> bool {
+  let run = std::env::var(var_str).unwrap_or(String::from("false"));
+  if run == "true" || run == "t" || run == "1" {
+    return true
+  }
+  false
+}
+
 #[derive(Clone)]
 pub struct WorkerConfig {
   network: Network,
@@ -56,9 +64,12 @@ impl Actor for Coordinator {
     let address = ctx.address();
     let arbiter = SyncArbiter::start(3, move || EventFetchActor::new(config.clone(), db_pool.clone(), address.clone()));
     let contract_hash = self.config.contract_hash.as_str();
-    arbiter.do_send(Fetch::new(contract_hash, Event::Minted));
-    arbiter.do_send(Fetch::new(contract_hash, Event::Burnt));
-    arbiter.do_send(Fetch::new(contract_hash, Event::Swapped));
+//    arbiter.do_send(Fetch::new(contract_hash, Event::Minted));
+//    arbiter.do_send(Fetch::new(contract_hash, Event::Burnt));
+//    arbiter.do_send(Fetch::new(contract_hash, Event::Swapped));
+    arbiter.do_send(Fetch::new(contract_hash, Event::AddNewTokenLiquidity));
+    arbiter.do_send(Fetch::new(contract_hash, Event::BurntXPool));
+    arbiter.do_send(Fetch::new(contract_hash, Event::XSwapped));
     for h in &self.config.distributor_contract_hashes {
       arbiter.do_send(Fetch::new(h.as_str(), Event::Claimed));
     }
@@ -225,12 +236,15 @@ impl EventFetchActor {
       ],
     ).expect("URL parsing failed!");
 
+    debug!("URL {} ", url);
+
     let resp = self.client.get(url).send()?;
     let body = resp.text()?;
-
+    
     debug!("Parsing {} for {} page {}", event, contract_hash, page_number);
     trace!("{}", body);
     let result: responses::ViewBlockResponse = serde_json::from_str(body.as_str())?;
+    debug!("Result {:?}", result);
 
     return Ok(result)
   }
@@ -256,7 +270,12 @@ impl Handler<Fetch> for EventFetchActor {
 
       if result.txs.len() == 0 {
         info!("Done with {} events.", event);
-        db::insert_backfill_completion(models::NewBackfillCompletion { contract_address: contract_hash, event_name: event.to_string().as_str() }, &conn)?;
+        if var_enabled("NO_SAVE_TO_DATABASE") {
+          debug!("Inserting backfill completion - Not Save To DB: contract_address {} event_name {}", contract_hash, event.to_string().as_str());
+        } else {
+          debug!("Inserting backfill completion: contract_address {} event_name {}", contract_hash, event.to_string().as_str());
+          db::insert_backfill_completion(models::NewBackfillCompletion { contract_address: contract_hash, event_name: event.to_string().as_str() }, &conn)?;
+        }
         return Ok(NextFetch::poll(&msg));
       }
 
@@ -268,6 +287,9 @@ impl Handler<Fetch> for EventFetchActor {
             Event::Burnt => persist_burn_event,
             Event::Swapped => persist_swap_event,
             Event::Claimed => persist_claim_event,
+            Event::AddNewTokenLiquidity => persist_mint_event,
+            Event::BurntXPool => persist_burn_event,
+            Event::XSwapped => persist_swap_event,
           };
           match persist(&conn, &tx, &ev, &i.try_into().unwrap()) {
             Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _)) => {
@@ -281,9 +303,16 @@ impl Handler<Fetch> for EventFetchActor {
         }
       }
 
-      if !inserted_some_event && db::backfill_completed(&conn, contract_hash, event.to_string().as_str())? {
-        info!("Fetched till last inserted {} event.", event);
-        return Ok(NextFetch::poll(&msg));
+      if var_enabled("NO_SAVE_TO_DATABASE") {
+        if !inserted_some_event {
+          info!("Fetched till last inserted {} event.", event);
+          return Ok(NextFetch::poll(&msg));
+        }  
+      } else {
+        if !inserted_some_event && db::backfill_completed(&conn, contract_hash, event.to_string().as_str())? {
+          info!("Fetched till last inserted {} event.", event);
+          return Ok(NextFetch::poll(&msg));
+        }  
       }
 
       debug!("Going to next page of {}.", event);
@@ -329,8 +358,13 @@ fn persist_mint_event(conn: &PgConnection, tx: &responses::ViewBlockTx, event: &
     zil_amount: &BigDecimal::from_str(zil_amount).unwrap(),
   };
 
-  debug!("Inserting: {:?}", add_liquidity);
-  db::insert_liquidity_change(add_liquidity, &conn).map(|_| true)
+  if var_enabled("NO_SAVE_TO_DATABASE") {
+    debug!("Inserting - Not Save To DB: {:?}", add_liquidity);
+    Ok(true)
+  } else {
+    debug!("Inserting: {:?}", add_liquidity);
+    db::insert_liquidity_change(add_liquidity, &conn).map(|_| true)
+  }
 }
 
 fn persist_burn_event(conn: &PgConnection, tx: &responses::ViewBlockTx, event: &responses::ViewBlockEvent, event_sequence: &i32) -> PersistResult {
@@ -358,8 +392,13 @@ fn persist_burn_event(conn: &PgConnection, tx: &responses::ViewBlockTx, event: &
     zil_amount: &BigDecimal::from_str(zil_amount).unwrap(),
   };
 
-  debug!("Inserting: {:?}", remove_liquidity);
-  db::insert_liquidity_change(remove_liquidity, &conn).map(|_| true)
+  if var_enabled("NO_SAVE_TO_DATABASE") {
+    debug!("Inserting - Not save to DB: {:?}", remove_liquidity);
+    Ok(true)
+  } else {
+    debug!("Inserting: {:?}", remove_liquidity);
+    db::insert_liquidity_change(remove_liquidity, &conn).map(|_| true)
+  }
 }
 
 fn persist_swap_event(conn: &PgConnection, tx: &responses::ViewBlockTx, event: &responses::ViewBlockEvent, event_sequence: &i32) -> PersistResult {
@@ -406,8 +445,13 @@ fn persist_swap_event(conn: &PgConnection, tx: &responses::ViewBlockTx, event: &
     is_sending_zil: &is_sending_zil,
   };
 
-  debug!("Inserting: {:?}", new_swap);
-  db::insert_swap(new_swap, &conn).map(|_| true)
+  if var_enabled("NO_SAVE_TO_DATABASE") {
+    debug!("Inserting - Not save to DB: {:?}", new_swap);
+    Ok(true)
+  } else {
+    debug!("Inserting: {:?}", new_swap);
+    db::insert_swap(new_swap, &conn).map(|_| true)
+  }
 }
 
 fn persist_claim_event(conn: &PgConnection, tx: &responses::ViewBlockTx, event: &responses::ViewBlockEvent, event_sequence: &i32) -> PersistResult {
@@ -434,6 +478,11 @@ fn persist_claim_event(conn: &PgConnection, tx: &responses::ViewBlockTx, event: 
     amount: &BigDecimal::from_str(amount).unwrap(),
   };
 
-  debug!("Inserting: {:?}", new_claim);
-  db::insert_claim(new_claim, &conn).map(|_| true)
+  if var_enabled("NO_SAVE_TO_DATABASE") {
+    debug!("Inserting - Not save to DB: {:?}", new_claim);
+    Ok(true)
+  } else {
+    debug!("Inserting: {:?}", new_claim);
+    db::insert_claim(new_claim, &conn).map(|_| true)
+  }
 }

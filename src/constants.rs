@@ -6,6 +6,9 @@ pub enum Event {
   Burnt,
   Swapped,
   Claimed,
+  AddNewTokenLiquidity,
+  BurntXPool,
+  XSwapped,
 }
 
 impl fmt::Display for Event {
@@ -15,6 +18,9 @@ impl fmt::Display for Event {
       Event::Burnt => write!(f, "Burnt"),
       Event::Swapped => write!(f, "Swapped"),
       Event::Claimed => write!(f, "Claimed"),
+      Event::AddNewTokenLiquidity => write!(f, "AddNewTokenLiquidity"),
+      Event::BurntXPool => write!(f, "BurntXPool"),
+      Event::XSwapped => write!(f, "XSwapped"),
     }
   }
 }
