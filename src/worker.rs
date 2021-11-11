@@ -287,7 +287,7 @@ impl Handler<Fetch> for EventFetchActor {
             Event::Burnt => persist_burn_event,
             Event::Swapped => persist_swap_event,
             Event::Claimed => persist_claim_event,
-            Event::AddNewTokenLiquidity => persist_mint_event,
+            Event::AddNewTokenLiquidity => persist_add_new_token_liquidity_event,
             Event::BurntXPool => persist_burn_event,
             Event::XSwapped => persist_swap_event,
           };
@@ -303,12 +303,7 @@ impl Handler<Fetch> for EventFetchActor {
         }
       }
 
-      if var_enabled("NO_SAVE_TO_DATABASE") {
-        if !inserted_some_event {
-          info!("Fetched till last inserted {} event.", event);
-          return Ok(NextFetch::poll(&msg));
-        }  
-      } else {
+      if !var_enabled("NO_SAVE_TO_DATABASE") {
         if !inserted_some_event && db::backfill_completed(&conn, contract_hash, event.to_string().as_str())? {
           info!("Fetched till last inserted {} event.", event);
           return Ok(NextFetch::poll(&msg));
@@ -356,6 +351,41 @@ fn persist_mint_event(conn: &PgConnection, tx: &responses::ViewBlockTx, event: &
     change_amount: &BigDecimal::from_str(amount).unwrap(),
     token_amount: &BigDecimal::from_str(token_amount).unwrap(),
     zil_amount: &BigDecimal::from_str(zil_amount).unwrap(),
+  };
+
+  if var_enabled("NO_SAVE_TO_DATABASE") {
+    debug!("Inserting - Not Save To DB: {:?}", add_liquidity);
+    Ok(true)
+  } else {
+    debug!("Inserting: {:?}", add_liquidity);
+    db::insert_liquidity_change(add_liquidity, &conn).map(|_| true)
+  }
+}
+
+fn persist_add_new_token_liquidity_event(conn: &PgConnection, tx: &responses::ViewBlockTx, event: &responses::ViewBlockEvent, event_sequence: &i32) -> PersistResult {
+  let name = event.name.as_str();
+  if name != "AddNewTokenLiquidity" {
+    return Ok(false)
+  }
+
+  let address = event.params.get("address").unwrap().as_str().expect("Malformed response!");  
+  let pool = event.params.get("token1_address").unwrap().as_str().expect("Malformed response!");
+  let token0_contribution = event.params.get("token0_contribution").unwrap().as_str().expect("Malformed response!");
+  let token1_contribution = event.params.get("token1_contribution").unwrap().as_str().expect("Malformed response!");
+
+  let transfer_event = tx.events.iter().find(|&event| event.name.as_str() == "TransferFromSuccess").unwrap();
+  let token0_amount = transfer_event.params.get("amount").unwrap().as_str().expect("Malformed response!");
+
+  let add_liquidity = models::NewLiquidityChange {
+    transaction_hash: &tx.hash,
+    event_sequence: &event_sequence,
+    block_height: &tx.block_height,
+    block_timestamp: &chrono::NaiveDateTime::from_timestamp(tx.timestamp / 1000, (tx.timestamp % 1000).try_into().unwrap()),
+    initiator_address: address,
+    token_address: pool,
+    change_amount: &BigDecimal::from_str(token0_contribution).unwrap(),
+    token_amount: &BigDecimal::from_str(token1_contribution).unwrap(),
+    zil_amount: &BigDecimal::from_str(token0_amount).unwrap(),
   };
 
   if var_enabled("NO_SAVE_TO_DATABASE") {
