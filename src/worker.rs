@@ -70,9 +70,9 @@ impl Actor for Coordinator {
     arbiter.do_send(Fetch::new(contract_hash, Event::AddedNewTokenLiquidity));
     arbiter.do_send(Fetch::new(contract_hash, Event::BurntXPool));
 //    arbiter.do_send(Fetch::new(contract_hash, Event::XSwapped));
-//    for h in &self.config.distributor_contract_hashes {
-//      arbiter.do_send(Fetch::new(h.as_str(), Event::Claimed));
-//    }
+    for h in &self.config.distributor_contract_hashes {
+      arbiter.do_send(Fetch::new(h.as_str(), Event::Claimed));
+    }
     self.arbiter = Some(arbiter);
   }
 
@@ -109,13 +109,16 @@ struct NextFetch {
 
 impl NextFetch {
   fn poll(msg: &Fetch) -> Self {
+    let value_str = std::env::var("FETCH_PERIOD").unwrap_or(String::from("30"));
+    let delay = value_str.parse::<u64>().unwrap();
+    debug!("Fetch Delay {} ", delay);
     Self {
       msg: Fetch {
         contract_hash: msg.contract_hash.clone(),
         event: msg.event.clone(),
         page_number: 1,
       },
-      delay: 30,
+      delay: delay,
     }
   }
 
@@ -244,7 +247,7 @@ impl EventFetchActor {
     debug!("Parsing {} for {} page {}", event, contract_hash, page_number);
     trace!("{}", body);
     let result: responses::ViewBlockResponse = serde_json::from_str(body.as_str())?;
-    debug!("Result {:?}", result);
+//    debug!("Result {:?}", result);
 
     return Ok(result)
   }
