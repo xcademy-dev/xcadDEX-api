@@ -83,7 +83,8 @@ struct ClaimInfo {
 /// Test endpoint.
 #[get("/")]
 async fn hello() -> impl Responder {
-    HttpResponse::Ok().body("Hello xcaddex!")
+  let network_str = std::env::var("NETWORK").unwrap_or(String::from("testnet"));
+    HttpResponse::Ok().body("Hello xcaddex! ".to_owned() + &network_str)
 }
 
 /// Gets swaps.
