@@ -1,0 +1,28 @@
+version: '3'
+
+services:
+  dex-api:
+    build: ./dex-api
+    env_file:
+      - 'docker.env'
+    ports:
+      - '3010:3010'
+
+  redis:
+    image: 'redis:6-alpine'
+    command: >
+      --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - 'redis:/var/lib/redis/data'
+    ports:
+      - '6379:6379'
+
+  nginx:
+    build: ./nginx
+    ports:
+      - 80:1337
+    depends_on:
+      - dex-api
+
+volumes:
+  redis:
